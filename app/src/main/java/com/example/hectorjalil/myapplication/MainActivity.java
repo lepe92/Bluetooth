@@ -20,17 +20,33 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.ListView;
 import android.widget.Toast;
+import android.widget.ImageView;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.BufferedOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.Timer;
+import java.util.TimerTask;
 
 public class MainActivity extends AppCompatActivity {
+    ImageView miimagen;
     ArrayAdapter<String> itemsAdapter;
     BluetoothAdapter mB;
+
+    String macpropia,macajena;
 
     private static final int REQUEST_ENABLE_BT = 1;
     private ArrayList<BluetoothDevice> btDeviceList = new ArrayList<BluetoothDevice>();
     ListView ls;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -47,7 +63,7 @@ public class MainActivity extends AppCompatActivity {
                         .setAction("Action", null).show();
             }
         });
-
+        miimagen=(ImageView)findViewById(R.id.imageView);
         ls = (ListView) findViewById(R.id.listView);
       //  Button bt= (Button) findViewById(R.id.button);
 
@@ -56,7 +72,9 @@ public class MainActivity extends AppCompatActivity {
         if(mB==null){
             Toast.makeText(getApplicationContext(), "No tiene bluetooth",Toast.LENGTH_LONG).show();
         }
-        else{    Toast.makeText(getApplicationContext(), "Si tiene bluetooth\nNombre: "+mB.getName()+"\nDireccion: "+mB.getAddress(),Toast.LENGTH_LONG).show();
+        else{
+            macpropia=mB.getAddress();
+            Toast.makeText(getApplicationContext(), "Si tiene bluetooth\nNombre: "+mB.getName()+"\nDireccion: "+mB.getAddress(),Toast.LENGTH_LONG).show();
             if(mB.isEnabled()==true)
                 Toast.makeText(getApplicationContext(), "Bluetooth activado",Toast.LENGTH_LONG).show();
             else {Toast.makeText(getApplicationContext(), "Bluetooth desactivado, pero se activara en breve",Toast.LENGTH_LONG).show();
@@ -100,7 +118,17 @@ public class MainActivity extends AppCompatActivity {
             }
         }); */
 
-        CheckBTState();
+        Timer tim;
+        tim = new Timer();
+
+        TimerTask tarea= new TimerTask() {
+            @Override
+            public void run() {
+                CheckBTState();
+                }
+        };
+
+    tim.schedule(tarea,5,10000);
 
 ///////////////////////hacer visible el dispositivo a los demás
       /*  Intent discoverableIntent = new
@@ -110,11 +138,80 @@ public class MainActivity extends AppCompatActivity {
 */
     }
 
+    public void insertarDatos(){
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                OutputStream os = null;
+                InputStream is = null;
+                HttpURLConnection conn = null;
+                try {
+                    //constants
+                    URL url = new URL("http://jimenezlepe.comuv.com/solicita.php");
+                    JSONObject jsonObject = new JSONObject();
+                    jsonObject.put("macd", macajena);
+                    jsonObject.put("macp", macpropia);
+
+                    String message = jsonObject.toString();
+
+                    conn = (HttpURLConnection) url.openConnection();
+                    conn.setReadTimeout( 10000 /*milliseconds*/ );
+                    conn.setConnectTimeout( 15000 /* milliseconds */ );
+                    conn.setRequestMethod("POST");
+                    conn.setDoInput(true);
+                    conn.setDoOutput(true);
+                    conn.setFixedLengthStreamingMode(message.getBytes().length);
+
+                    //make some HTTP header nicety
+                    conn.setRequestProperty("Content-Type", "application/json;charset=utf-8");
+                    conn.setRequestProperty("X-Requested-With", "XMLHttpRequest");
+
+                    //open
+                    conn.connect();
+
+                    //setup send
+
+                    os = new BufferedOutputStream(conn.getOutputStream());
+                    os.write(message.getBytes());
+                    //clean up
+                    os.flush();
+
+                    //do somehting with response
+                    is = conn.getInputStream();
+                    //  Toast.makeText(getApplicationContext(), is.toString(), Toast.LENGTH_LONG).show();
+                    Log.i("respuesta", is.toString());
+                    //String contentAsString = readIt(is,len);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                } finally {
+                    //clean up
+                    try {
+                        os.close();
+                        is.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+
+                    conn.disconnect();
+                }
+            }
+        }).start();
+    }
+
+
+    public void clickImagen(View view)
+    {
+
+    }
+
     /* This routine is called when an activity completes.*/
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQUEST_ENABLE_BT) {
+
             CheckBTState();
 
         }
@@ -143,29 +240,37 @@ public class MainActivity extends AppCompatActivity {
 
                 // Starting the device discovery
                 mB.startDiscovery();
+
+
             } else {
                 Intent enableBtIntent = new Intent(mB.ACTION_REQUEST_ENABLE);
                 startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
             }
         }
     }
+// sirve para encontrar dispositivos cercanos
 
-    private final BroadcastReceiver ActionFoundReceiver = new BroadcastReceiver(){
+        private final BroadcastReceiver ActionFoundReceiver = new BroadcastReceiver() {
 
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            String action = intent.getAction();
-            if(BluetoothDevice.ACTION_FOUND.equals(action)) {
-                BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-                //Toast.makeText(getApplicationContext(),btDeviceList.size(),Toast.LENGTH_LONG).show();
-                Log.i("Detectado",device.getName());
-                //  out.append("\n  Device: " + device.getName() + ", " + device);
-                btDeviceList.add(device);
-                    itemsAdapter.add(device.getName()+"|"+device.getAddress());
-                ls.setAdapter(itemsAdapter);
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                String action = intent.getAction();
+                itemsAdapter.clear();
+                if (BluetoothDevice.ACTION_FOUND.equals(action)) { //CADA QUE ENCUENTRA UN DISPOSITIVO
+                    BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                    //Toast.makeText(getApplicationContext(),btDeviceList.size(),Toast.LENGTH_LONG).show();
+                    Log.i("Detectado", device.getName()+"    "+device.getAddress());
+                    Toast.makeText(getApplicationContext(), "DISPOSITIVO DESCUBIERTO: " + device.getName(), Toast.LENGTH_LONG).show();
+                    //Toast.makeText(getApplicationContext(), "Si tiene bluetooth\nNombre: "+mB.getName()+"\nDireccion: "+mB.getAddress(),Toast.LENGTH_LONG).show();
+                    //  out.append("\n  Device: " + device.getName() + ", " + device);
+                   // btDeviceList.add(device);
+                    macajena=device.getAddress();
+                    insertarDatos();
+                    itemsAdapter.add(device.getName() + "|" + device.getAddress());
+                    ls.setAdapter(itemsAdapter);
+                }
             }
-        }
-    };
+        };
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
